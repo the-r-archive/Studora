@@ -56,7 +56,7 @@ Cloud synchronization is a possible future enhancement.
 
 ## 🗺️ Project Status
 
-\<badge>In Development\</badge>
+In Development
 
 STUDORA is an evolving personal project. New improvements, features, and refinements may be introduced over time.
 
@@ -68,7 +68,7 @@ Concept, project direction, and curation by me, with AI-assisted development.
 
 ---
 
-STUDORA OS |Your Study Space. Your System. Your Progress.|
+STUDORA OS-Your Study Space. Your System. Your Progress.
 
 Made with ❤️ by Rajit Saha
 
