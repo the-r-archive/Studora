@@ -68,7 +68,7 @@ Concept, project direction, and curation by me, with AI-assisted development.
 
 ---
 
-\<p align="center">   \<strong>STUDORA OS\</strong>\<br/>   Your Study Space. Your System. Your Progress. \</p>
+STUDORA OS |Your Study Space. Your System. Your Progress.|
 
-\<p align="center">   Made with ❤️ by Rajit Saha \</p>
+Made with ❤️ by Rajit Saha
 
