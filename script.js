@@ -377,7 +377,12 @@ async function handleGoogleToken(response) {
     showToast(saved.tasks.length || saved.notes.length || saved.subjects.length
       ? `Welcome back, ${greetingName()}!`
       : `Welcome, ${greetingName()}!`);
-    autoConnectSync();
+    const expiresAt = Date.now() + Math.max(120, (Number(response.expires_in) || 3600) - 120) * 1000;
+    autoConnectSync(response.access_token, expiresAt).then((ok) => {
+      if (ok === false) {
+        setTimeout(() => showToast("Signed in, but cloud sync is paused. Press Reconnect in Settings and allow Drive access."), 1500);
+      }
+    });
   } catch {
     showToast("Couldn't load your Google profile. Please try again.");
   }
@@ -411,8 +416,15 @@ function initGoogle() {
   try {
     googleTokenClient = window.google.accounts.oauth2.initTokenClient({
       client_id: GOOGLE_CLIENT_ID,
-      scope: "openid profile email",
+      scope: `openid profile email ${DRIVE_SCOPE}`,
       callback: handleGoogleToken,
+      error_callback: (err) => {
+        if (err && err.type === "access_denied") {
+          showToast("Google sign-in was cancelled.");
+        } else {
+          showToast(`Google sign-in failed (${(err && err.type) || "unknown"}). Check the OAuth scopes in Google Cloud.`);
+        }
+      },
     });
   } catch {
     googleTokenClient = null;
@@ -428,6 +440,7 @@ const sync = {
   timer: null,
   busy: false,
   wanted: readSyncFlag(),
+  lastError: "",
 };
 
 function readSyncFlag() {
@@ -455,9 +468,10 @@ function resetSyncSession() {
   sync.status = "off";
 }
 
-function requestDriveToken() {
+function requestDriveToken(promptMode = "") {
   return new Promise((resolve) => {
     if (!GOOGLE_CLIENT_ID || !window.google || !window.google.accounts || !window.google.accounts.oauth2) {
+      sync.lastError = "unavailable";
       resolve(null);
       return;
     }
@@ -472,29 +486,57 @@ function requestDriveToken() {
         client_id: GOOGLE_CLIENT_ID,
         scope: `openid profile email ${DRIVE_SCOPE}`,
         callback: (resp) => done(resp && resp.access_token ? resp : null),
-        error_callback: () => done(null),
+        error_callback: (err) => {
+          sync.lastError = (err && err.type) || "unknown";
+          if (err && err.message) console.warn("Google auth error:", err.type, err.message);
+          done(null);
+        },
       });
-      client.requestAccessToken({ prompt: "" });
-    } catch {
+      client.requestAccessToken({ prompt: promptMode });
+    } catch (err) {
+      sync.lastError = (err && err.type) || "unknown";
       done(null);
     }
-    setTimeout(() => done(null), 90000);
+    setTimeout(() => { sync.lastError = sync.lastError || "timeout"; done(null); }, 90000);
   });
+}
+
+function syncErrorMessage(type) {
+  if (type === "popup_failed_to_open" || type === "popup_closed") {
+    return "Your browser blocked the Google popup. Allow pop-ups for this site, then press Reconnect.";
+  }
+  if (type === "access_denied") {
+    return "Google Drive access was denied. Press Reconnect and tick the Drive permission.";
+  }
+  if (type === "origin_mismatch") {
+    return "This site's URL isn't listed in Google Cloud → Clients → Authorized JavaScript origins.";
+  }
+  if (type === "invalid_client") {
+    return "The Google Client ID doesn't match this Cloud project.";
+  }
+  return "Cloud sync couldn't connect. Press Reconnect in Settings and allow Drive access.";
 }
 
 async function connectSync(opts = {}) {
   if (!state.user || !GOOGLE_CLIENT_ID || sync.busy) return false;
+  if (sync.status === "on" && sync.token && Date.now() < sync.expiresAt) return true;
   if (!window.google || !window.google.accounts || !window.google.accounts.oauth2) {
     setSyncStatus(sync.wanted ? "paused" : "off");
     return false;
   }
   sync.busy = true;
+  sync.lastError = "";
   setSyncStatus("connecting");
-  const resp = await requestDriveToken();
+  let resp = null;
+  if (opts.token && opts.expiresAt && Date.now() < opts.expiresAt) {
+    resp = { access_token: opts.token, expires_in: Math.max(60, Math.floor((opts.expiresAt - Date.now()) / 1000)) };
+  } else {
+    resp = await requestDriveToken(opts.silent ? "none" : "");
+  }
   sync.busy = false;
   if (!resp) {
     setSyncStatus(sync.wanted ? "paused" : "off");
-    if (!opts.silent) showToast("Cloud sync couldn't connect. Check pop-ups and try again from Settings.");
+    if (!opts.silent) showToast(syncErrorMessage(sync.lastError));
     return false;
   }
   sync.token = resp.access_token;
@@ -504,7 +546,8 @@ async function connectSync(opts = {}) {
   setSyncStatus("on");
   const pushed = await syncNow({ quiet: true });
   if (!pushed) {
-    if (!opts.silent) showToast("Cloud sync connected, but the first sync didn't finish. Try Sync now.");
+    setSyncStatus("paused");
+    if (!opts.silent) showToast("Drive connected, but the first sync didn't finish. Check that the Drive API and drive.appdata scope are enabled, then press Sync now.");
     return false;
   }
   if (!opts.silent) showToast("Cloud sync is on — your tasks follow this Google account.");
@@ -600,12 +643,12 @@ function scheduleCloudPush() {
   }, 1200);
 }
 
-function autoConnectSync() {
+function autoConnectSync(sessionToken, expiresAt) {
   let tried = false;
   try { tried = localStorage.getItem(SYNC_TRIED_KEY) === "1"; } catch { /* ignore */ }
-  if (!sync.wanted && tried) return;
+  if (!sync.wanted && tried) return Promise.resolve(null);
   try { localStorage.setItem(SYNC_TRIED_KEY, "1"); } catch { /* ignore */ }
-  connectSync();
+  return connectSync({ silent: true, token: sessionToken, expiresAt });
 }
 
 async function enableCloudSync() {
