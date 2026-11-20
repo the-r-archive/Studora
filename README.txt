@@ -21,9 +21,15 @@ WHAT WORKS
   stored. Sign in with Google and your tasks, notes, subjects and focus history
   are saved for that Google account. Signing out returns the workspace to
   zero; signing back in restores your data.
-- Poppins typography throughout, light and dark themes (preference saved)
+- Cloud sync: signed-in data is mirrored to a hidden app folder in your own
+  Google Drive, so the same tasks appear on every device signed in with the
+  same Google account (laptop, phone, another browser). The newest copy wins.
+- Loading screen, refreshed neutral glass design, rounding and restrained
+  emerald accents (light and dark themes)
+- Poppins typography throughout
 - Fully responsive: floating glass sidebar on desktop, glass bottom bar on phones
-- Logo used across the app, with matching favicon set
+- Logo and favicon are embedded in the page itself, so they cannot 404 on a
+  host like Vercel even if the assets folder is not uploaded
 
 RUN LOCALLY
 -----------
@@ -64,14 +70,38 @@ How it works: the page uses Google Identity Services (accounts.google.com/gsi/
 client) to request an access token with the "openid profile email" scopes, then
 reads name, email and picture from Google's userinfo endpoint. You stay signed
 in on this device until you press "Sign out" in Settings; the token itself is
-never written to storage.
+never written to storage. Profile photos are loaded from Google with
+referrerpolicy="no-referrer", which is what Google needs to serve them from a
+deployed domain.
+
+ENABLE CLOUD SYNC (same tasks on laptop and phone)
+--------------------------------------------------
+Sync stores one small JSON file in the hidden "app data" folder of the signed-in
+user's own Google Drive. No server or database of yours is involved.
+
+1. In the same Google Cloud project, open "APIs & Services" -> "Library" and
+   enable the "Google Drive API".
+2. Open "APIs & Services" -> "OAuth consent screen" -> "Data access" and add
+   the scope: https://www.googleapis.com/auth/drive.appdata
+   (it is a non-sensitive scope, so no verification is needed while testing).
+3. Redeploy / reload. The first time you sign in, Google asks for Drive access
+   in the popup. Accept it and Settings -> Cloud sync shows "On".
+4. On your phone, open the deployed site, sign in with the same Google account
+   and your tasks are pulled from Drive automatically.
+
+If access is denied or pop-ups are blocked, Settings -> Cloud sync has a
+"Turn on cloud sync" / "Reconnect" button. Turning sync off keeps the Drive
+copy; "Reset all data" clears it on the next sync.
 
 DEPLOY TO VERCEL
 ----------------
 1. Import the folder as a static project.
 2. No build command is needed; use the project root as the output directory.
+   Make sure index.html, style.css, script.js and the assets folder are all
+   uploaded (the navbar logo and favicon are embedded, so they work regardless).
 3. Add your Vercel URL under "Authorized JavaScript origins" for the same
    OAuth client ID (Google Cloud console -> Credentials).
+4. Add the Drive API + drive.appdata scope as described above to enable sync.
 
 NOTES
 -----
@@ -79,13 +109,15 @@ NOTES
   counter begins at zero until you sign in and add something.
 - Nothing is saved while signed out. Anything you add before signing in lives
   for that visit only and is saved to your account the moment you sign in.
-- Signed-in data is stored in localStorage under your Google account id, so
-  signing out hides it (workspace returns to zero) and signing back in brings
-  it back. Tasks, notes, subjects and focus history survive reloads.
+- Signed-in data is stored in localStorage under your Google account id and,
+  when cloud sync is on, also in your Google Drive app folder. Each device
+  compares timestamps and keeps the newest copy, so edits made on the phone
+  appear on the laptop after a reload / "Sync now".
 - On the first sign-in, any data saved by an older version of STUDORA is moved
   into your account.
 - Resetting the workspace in Settings clears the data saved for your Google
-  account but keeps your theme and sign-in.
+  account (and the cloud copy on the next sync) but keeps your theme and
+  sign-in.
 - Icons load from Lucide, fonts from Google Fonts and the Google sign-in
   library from Google, so first load needs internet.
 - The profile photo is loaded from Google's servers each visit; if it cannot
